@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workout Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #f0f0f0; color: #222; font-size: 14px; }
+
+/* TOP BAR */
+.topbar { background: #1a1a1a; color: #c8f542; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; }
+.topbar h1 { font-size: 1rem; }
+.topbar span { font-size: 0.75rem; color: #888; }
+
+/* MAIN LAYOUT */
+.layout { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 44px); }
+
+/* LEFT SIDEBAR */
+.sidebar { background: #fff; border-right: 2px solid #ddd; display: flex; flex-direction: column; overflow: hidden; }
+.sidebar-section { padding: 14px 16px; border-bottom: 1px solid #eee; }
+.sidebar-section h3 { font-size: 0.75rem; text-transform: uppercase; color: #888; letter-spacing: 0.06em; margin-bottom: 8px; }
+label.fld { display: block; font-size: 0.72rem; font-weight: bold; color: #555; margin-bottom: 3px; margin-top: 10px; }
+label.fld:first-child { margin-top: 0; }
+input[type=text] { width: 100%; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; }
+input[type=text]:focus { outline: none; border-color: #5a8a00; }
+.key-hint { font-size: 0.65rem; color: #999; margin-top: 2px; }
+.key-hint a { color: #5a8a00; }
+.key-ok { color: #5a8a00; font-size: 0.65rem; margin-top: 2px; font-weight: bold; }
+
+/* UPLOAD */
+.upload-area { border: 2px dashed #ccc; border-radius: 6px; padding: 16px; text-align: center; cursor: pointer; position: relative; background: #fafafa; transition: all 0.15s; }
+.upload-area:hover, .upload-area.drag { border-color: #5a8a00; background: #f0f8e0; }
+.upload-area input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.upload-area p { font-size: 0.8rem; color: #777; margin-top: 4px; }
+
+/* PAGE GRID */
+.page-grid-wrap { flex: 1; overflow-y: auto; padding: 10px 12px; }
+.page-grid-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.page-grid-header span { font-size: 0.72rem; color: #666; }
+.page-grid-header div { display: flex; gap: 8px; }
+.page-grid-header a { font-size: 0.7rem; color: #5a8a00; cursor: pointer; text-decoration: underline; }
+.page-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.page-card { border: 2px solid #ddd; border-radius: 4px; cursor: pointer; overflow: hidden; position: relative; background: #f5f5f5; transition: border-color 0.15s; aspect-ratio: 0.75; }
+.page-card:hover { border-color: #aaa; }
+.page-card.selected { border-color: #5a8a00; }
+.page-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.page-card .pnum { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.55rem; text-align: center; padding: 2px; }
+.page-card .pcheck { position: absolute; top: 2px; right: 2px; background: #5a8a00; color: #fff; border-radius: 50%; width: 14px; height: 14px; font-size: 0.5rem; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+.page-card .analyzed-badge { position: absolute; top: 2px; left: 2px; background: #1a6aff; color: #fff; border-radius: 3px; font-size: 0.5rem; padding: 1px 3px; }
+
+/* ANALYZE SECTION */
+.analyze-section { padding: 12px 16px; border-top: 2px solid #eee; background: #f9f9f9; }
+.client-input { display: flex; gap: 6px; margin-bottom: 8px; }
+.client-input input { flex: 1; padding: 7px 9px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.82rem; }
+.btn-analyze { width: 100%; padding: 10px; background: #5a8a00; color: #fff; border: none; border-radius: 5px; font-size: 0.9rem; font-weight: bold; cursor: pointer; }
+.btn-analyze:disabled { background: #aaa; cursor: not-allowed; }
+.status-msg { margin-top: 8px; padding: 7px 10px; border-radius: 4px; font-size: 0.75rem; display: none; }
+.status-msg.ok  { background: #e8f5d0; color: #3a6600; border: 1px solid #b8e070; display: block; }
+.status-msg.err { background: #fde8e8; color: #900; border: 1px solid #f5b0b0; display: block; }
+.status-msg.inf { background: #e8f0fe; color: #1a4a8a; border: 1px solid #a0c0f5; display: block; }
+
+/* RIGHT - RESULTS */
+.results-area { display: flex; flex-direction: column; overflow: hidden; }
+.results-topbar { padding: 12px 20px; background: #fff; border-bottom: 1px solid #ddd; display: flex; align-items: center; justify-content: space-between; }
+.results-topbar strong { font-size: 0.9rem; }
+.results-topbar .btns { display: flex; gap: 8px; }
+.btn-copy { padding: 7px 14px; background: #1a1a1a; color: #c8f542; border: none; border-radius: 5px; font-size: 0.8rem; font-weight: bold; cursor: pointer; }
+.btn-clear { padding: 7px 14px; background: #cc3333; color: #fff; border: none; border-radius: 5px; font-size: 0.8rem; font-weight: bold; cursor: pointer; }
+.results-scroll { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.empty-state { text-align: center; padding: 80px 20px; color: #aaa; }
+.empty-state div { font-size: 2.5rem; margin-bottom: 10px; }
+
+/* CLIENT CARDS */
+.client-card { background: #fff; border: 1px solid #ddd; border-radius: 7px; margin-bottom: 14px; overflow: hidden; }
+.client-card-head { background: #1a1a1a; color: #fff; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+.client-card-head .name { font-weight: bold; font-size: 0.95rem; }
+.client-card-head .meta { font-size: 0.7rem; color: #aaa; }
+.client-card-head button { background: none; border: none; color: #888; cursor: pointer; font-size: 0.9rem; padding: 2px 5px; }
+.client-card-head button:hover { color: #ff6666; }
+table.ex { width: 100%; border-collapse: collapse; }
+table.ex th { background: #333; color: #ddd; padding: 6px 9px; text-align: left; font-size: 0.7rem; font-weight: bold; }
+table.ex td { padding: 6px 9px; border-bottom: 1px solid #f0f0f0; font-size: 0.8rem; }
+table.ex tr:last-child td { border-bottom: none; }
+table.ex tr.peak td { background: #f0f8e0; }
+table.ex tr.peak td.wt { background: #c8f542; font-weight: bold; color: #2d5200; }
+table.ex td.code { font-weight: bold; color: #444; width: 40px; }
+table.ex tr.peak td.code { color: #3a6600; }
+table.ex td.ex-name { color: #333; }
+.card-notes { padding: 8px 12px; font-size: 0.72rem; color: #666; background: #fffbf0; border-top: 1px solid #eee; }
+.progress-bar { height: 3px; background: #5a8a00; transition: width 0.3s; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>💪 Workout Progress Tracker</h1>
+  <span id="topStatus">Ready</span>
+</div>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h3>Setup</h3>
+      <label class="fld">Anthropic API Key</label>
+      <input type="text" id="apiKey" placeholder="sk-ant-..." style="font-family:monospace;font-size:0.72rem" oninput="onKeyInput()" onpaste="onKeyPaste(event)" />
+      <div id="keyHint" class="key-hint">Get one at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → API Keys</div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Load PDF</h3>
+      <div class="upload-area" id="uploadArea">
+        <input type="file" id="fileInput" accept=".pdf,image/*" />
+        <div style="font-size:1.6rem">📄</div>
+        <p>Click or drop a scanned PDF</p>
+      </div>
+      <div id="progressBar" style="margin-top:6px;background:#eee;border-radius:2px;display:none"><div class="progress-bar" id="progressFill" style="width:0%"></div></div>
+    </div>
+
+    <div class="page-grid-wrap" id="pageGridWrap" style="display:none">
+      <div class="page-grid-header">
+        <span id="pageSelCount">0 pages selected</span>
+        <div>
+          <a onclick="selectAllPages()">All</a>
+          <a onclick="selectNoPages()">None</a>
+        </div>
+      </div>
+      <div class="page-grid" id="pageGrid"></div>
+    </div>
+
+    <div class="analyze-section">
+      <label class="fld" style="margin-bottom:6px">Client Name <span style="font-weight:normal">(or leave blank to auto-detect)</span></label>
+      <input type="text" id="clientNameInput" placeholder="Auto-detected from sheet…" style="margin-bottom:8px" />
+      <button class="btn-analyze" id="analyzeBtn" disabled onclick="analyzeSelected()">🔍 Analyze Selected Pages as One Client</button>
+      <div class="status-msg" id="statusMsg"></div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="results-area">
+    <div class="results-topbar">
+      <strong>Results <span id="clientCountLabel" style="color:#888;font-weight:normal;font-size:0.8rem"></span></strong>
+      <div class="btns">
+        <button class="btn-copy" onclick="copyAllData()">📋 Copy All Data for Word Doc</button>
+        <button class="btn-clear" onclick="clearAllClients()">🗑 Clear All</button>
+      </div>
+    </div>
+    <div class="results-scroll" id="resultsScroll">
+      <div class="empty-state"><div>📊</div>Analyze sheets on the left — clients will appear here, sorted A–Z.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const API = 'https://api.anthropic.com/v1/messages';
+let pages = [];
+let clients = [];
+let analyzing = false;
+
+// ── Persist clients in localStorage ──────────────────────────────────────────
+function saveClients() {
+  try { localStorage.setItem('wt_clients_v2', JSON.stringify(clients)); } catch(e) {}
+}
+function loadClients() {
+  try {
+    const s = localStorage.getItem('wt_clients_v2');
+    if (s) clients = JSON.parse(s);
+  } catch(e) {}
+}
+
+// ── API Key ───────────────────────────────────────────────────────────────────
+function getKey() {
+  return document.getElementById('apiKey').value.replace(/[^\x20-\x7E]/g,'').trim();
+}
+function onKeyInput() {
+  const k = getKey();
+  const hint = document.getElementById('keyHint');
+  if (k.length > 10) {
+    hint.innerHTML = k.startsWith('sk-ant-') ? '<span style="color:#5a8a00;font-weight:bold">✓ Key looks valid</span>' : '<span style="color:#cc0000">⚠ Key format looks wrong — should start with sk-ant-</span>';
+  } else {
+    hint.innerHTML = 'Get one at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → API Keys';
+  }
+  checkReady();
+}
+function onKeyPaste(e) {
+  e.preventDefault();
+  const cleaned = e.clipboardData.getData('text').replace(/[^\x20-\x7E]/g,'').trim();
+  document.getElementById('apiKey').value = cleaned;
+  onKeyInput();
+}
+
+// ── File loading ──────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+const ua = document.getElementById('uploadArea');
+ua.addEventListener('dragover', e => { e.preventDefault(); ua.classList.add('drag'); });
+ua.addEventListener('dragleave', () => ua.classList.remove('drag'));
+ua.addEventListener('drop', e => { e.preventDefault(); ua.classList.remove('drag'); if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+
+async function loadFile(file) {
+  pages = [];
+  document.getElementById('pageGridWrap').style.display = 'none';
+  setStatus('inf', 'Loading file…');
+  const pb = document.getElementById('progressBar');
+  const pf = document.getElementById('progressFill');
+  pb.style.display = 'block'; pf.style.width = '0%';
+
+  try {
+    const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+    if (isPdf) {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+      const n = pdf.numPages;
+      for (let i = 1; i <= n; i++) {
+        setStatus('inf', `Rendering page ${i} of ${n}…`);
+        pf.style.width = Math.round((i/n)*100) + '%';
+        const pg = await pdf.getPage(i);
+        const vp = pg.getViewport({scale: 2.0});
+        const cv = document.createElement('canvas');
+        cv.width = vp.width; cv.height = vp.height;
+        await pg.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+        const fullB64 = cv.toDataURL('image/jpeg', 0.92).split(',')[1];
+        const tc = document.createElement('canvas');
+        tc.width = 80; tc.height = Math.round(cv.height * 80 / cv.width);
+        tc.getContext('2d').drawImage(cv, 0, 0, tc.width, tc.height);
+        pages.push({ thumb: tc.toDataURL('image/jpeg', 0.7), b64: fullB64, selected: false, analyzed: false });
+      }
+      setStatus('ok', `${n} pages loaded. Select the pages for ONE client, then click Analyze.`);
+    } else {
+      const url = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsDataURL(file); });
+      const jpeg = await toJpeg(url);
+      pages.push({ thumb: jpeg, b64: jpeg.split(',')[1], selected: true, analyzed: false });
+      setStatus('ok', 'Image loaded. Click Analyze.');
+    }
+    pb.style.display = 'none';
+    renderPageGrid();
+    checkReady();
+  } catch(err) {
+    pb.style.display = 'none';
+    setStatus('err', 'Error loading file: ' + err.message);
+  }
+}
+
+function toJpeg(url) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX=2000, r=Math.min(MAX/img.width, MAX/img.height, 1);
+      const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r);
+      const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.drawImage(img,0,0,c.width,c.height);
+      res(c.toDataURL('image/jpeg',0.92));
+    };
+    img.onerror = () => res(url);
+    img.src = url;
+  });
+}
+
+// ── Page grid ─────────────────────────────────────────────────────────────────
+function renderPageGrid() {
+  const wrap = document.getElementById('pageGridWrap');
+  const grid = document.getElementById('pageGrid');
+  const selCount = pages.filter(p=>p.selected).length;
+  document.getElementById('pageSelCount').textContent = `${selCount} of ${pages.length} selected`;
+  wrap.style.display = 'block';
+  grid.innerHTML = '';
+  pages.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'page-card' + (p.selected ? ' selected' : '');
+    div.innerHTML = `
+      <img src="${p.thumb}" alt="p${i+1}">
+      <div class="pnum">p.${i+1}</div>
+      ${p.selected ? '<div class="pcheck">✓</div>' : ''}
+      ${p.analyzed ? '<div class="analyzed-badge">✓ done</div>' : ''}
+    `;
+    div.onclick = () => { pages[i].selected = !pages[i].selected; renderPageGrid(); checkReady(); };
+    grid.appendChild(div);
+  });
+}
+
+function selectAllPages() { pages.forEach(p => p.selected = true); renderPageGrid(); checkReady(); }
+function selectNoPages()  { pages.forEach(p => p.selected = false); renderPageGrid(); checkReady(); }
+
+// ── Ready check ───────────────────────────────────────────────────────────────
+function checkReady() {
+  const hasKey = getKey().length > 10;
+  const hasSel = pages.filter(p=>p.selected).length > 0;
+  document.getElementById('analyzeBtn').disabled = !(hasKey && hasSel && !analyzing);
+}
+
+// ── Analyze ───────────────────────────────────────────────────────────────────
+async function analyzeSelected() {
+  const key = getKey();
+  const sel = pages.filter(p => p.selected);
+  if (!key || !sel.length || analyzing) return;
+
+  analyzing = true;
+  checkReady();
+  setStatus('inf', `Sending ${sel.length} page${sel.length>1?'s':''} to Claude AI…`);
+  document.getElementById('topStatus').textContent = 'Analyzing…';
+
+  const prompt = `You are reading a handwritten gym workout tracking sheet. Extract ALL visible data carefully.
+
+The sheet tracks these exercises across Weeks 1-3 with Sets 1-3:
+- A1: Strict Landmine Press
+- B1: Hex Bar Deadlift
+- C1: Lateral Box Step-Up
+- C2: Banded Hip Hydrant
+- C3: DB Biceps Curl
+
+Find: client name or signature (often handwritten in a corner), all weights per set (e.g. 250, 40x8, BW, +20), RPE values 1-10.
+
+Return ONLY valid JSON with no extra text:
+{
+  "clientName": "exact name from sheet or Unknown",
+  "date": "date if visible or null",
+  "exercises": [
+    {
+      "code": "A1",
+      "name": "Strict Landmine Press",
+      "entries": [
+        {"week": 1, "set": 1, "weight": 45, "reps": 8, "rpe": null, "unit": "lbs", "raw": "45x8"}
+      ],
+      "notes": null
+    }
+  ],
+  "generalNotes": null
+}`;
+
+  try {
+    const images = sel.map(p => ({type:'image', source:{type:'base64', media_type:'image/jpeg', data:p.b64}}));
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 3000,
+        messages: [{ role: 'user', content: [...images, {type:'text', text:prompt}] }]
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || 'API error ' + res.status);
+
+    const text = data.content[0].text;
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('Could not parse response');
+    const parsed = JSON.parse(match[0]);
+
+    // Override name if typed
+    const nameOverride = document.getElementById('clientNameInput').value.trim();
+    if (nameOverride) parsed.clientName = nameOverride;
+
+    // Compute best weight + peak RPE
+    parsed.exercises.forEach(ex => {
+      const withW = ex.entries.filter(e => e.weight != null && !isNaN(Number(e.weight)));
+      if (withW.length) {
+        const max = Math.max(...withW.map(e => Number(e.weight)));
+        ex.bestWeight = max;
+        ex.bestEntry = withW.find(e => Number(e.weight) === max);
+      }
+      const withR = ex.entries.filter(e => e.rpe != null && !isNaN(Number(e.rpe)));
+      if (withR.length) ex.peakRPE = Math.max(...withR.map(e => Number(e.rpe)));
+    });
+
+    // Mark those pages as analyzed
+    pages.forEach((p, i) => { if (p.selected) pages[i].analyzed = true; pages[i].selected = false; });
+
+    clients.push(parsed);
+    clients.sort((a,b) => a.clientName.localeCompare(b.clientName));
+    saveClients();
+    renderPageGrid();
+    renderResults();
+
+    document.getElementById('clientNameInput').value = '';
+    setStatus('ok', `✅ "${parsed.clientName}" added! Select next client's pages and analyze again.`);
+    document.getElementById('topStatus').textContent = `${clients.length} client${clients.length!==1?'s':''} loaded`;
+
+  } catch(err) {
+    setStatus('err', 'Error: ' + err.message);
+    document.getElementById('topStatus').textContent = 'Error';
+  }
+
+  analyzing = false;
+  checkReady();
+}
+
+// ── Render results ─────────────────────────────────────────────────────────────
+function renderResults() {
+  const scroll = document.getElementById('resultsScroll');
+  const label = document.getElementById('clientCountLabel');
+  label.textContent = clients.length ? `(${clients.length} client${clients.length!==1?'s':''}, A–Z)` : '';
+
+  if (!clients.length) {
+    scroll.innerHTML = '<div class="empty-state"><div>📊</div>Analyze sheets on the left — clients will appear here, sorted A–Z.</div>';
+    return;
+  }
+
+  scroll.innerHTML = clients.map((c, ci) => {
+    let topEx=null, topW=-1;
+    c.exercises.forEach(ex => { if ((ex.bestWeight??-1) > topW) { topW=ex.bestWeight; topEx=ex.code; }});
+
+    const rows = c.exercises.map(ex => {
+      const isPeak = ex.code === topEx;
+      const wt  = ex.bestWeight != null ? `${ex.bestWeight} ${ex.bestEntry?.unit||'lbs'}` : '—';
+      const rpe = ex.peakRPE   != null ? `${ex.peakRPE}/10` : '—';
+      const ws  = ex.bestEntry  ? `Wk${ex.bestEntry.week} S${ex.bestEntry.set}` : '—';
+      return `<tr class="${isPeak?'peak':''}">
+        <td class="code">${ex.code}</td>
+        <td class="ex-name">${ex.name}${isPeak?' ⭐':''}</td>
+        <td class="wt">${wt}</td>
+        <td>${rpe}</td>
+        <td>${ws}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="client-card">
+      <div class="client-card-head">
+        <div>
+          <div class="name">${c.clientName}</div>
+          <div class="meta">${c.date||'No date'} · ${c.exercises.reduce((a,e)=>a+e.entries.length,0)} total sets</div>
+        </div>
+        <button onclick="removeClient(${ci})" title="Remove">✕</button>
+      </div>
+      <table class="ex">
+        <thead><tr><th>Code</th><th>Exercise</th><th>Peak Weight</th><th>Peak RPE</th><th>Wk / Set</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${c.generalNotes ? `<div class="card-notes">📝 ${c.generalNotes}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function removeClient(i) {
+  if (!confirm(`Remove "${clients[i].clientName}"?`)) return;
+  clients.splice(i, 1);
+  saveClients();
+  renderResults();
+}
+
+function clearAllClients() {
+  if (!clients.length) return;
+  if (!confirm(`Remove all ${clients.length} clients?`)) return;
+  clients = [];
+  saveClients();
+  renderResults();
+}
+
+// ── Copy data ──────────────────────────────────────────────────────────────────
+function copyAllData() {
+  if (!clients.length) { alert('No clients yet — analyze some sheets first.'); return; }
+  const text = JSON.stringify(clients, null, 2);
+  navigator.clipboard.writeText(text).then(() => {
+    alert(`✅ ${clients.length} client${clients.length!==1?'s':''} copied!\n\nNow paste into Claude chat and say "generate the Word doc".`);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:40%;z-index:9999;font-size:10px;padding:10px';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert(`✅ ${clients.length} client${clients.length!==1?'s':''} copied! Paste into Claude chat.`);
+  });
+}
+
+// ── Status message ─────────────────────────────────────────────────────────────
+function setStatus(type, msg) {
+  const el = document.getElementById('statusMsg');
+  el.className = 'status-msg ' + type;
+  el.textContent = msg;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+loadClients();
+renderResults();
+document.getElementById('topStatus').textContent = clients.length ? `${clients.length} client${clients.length!==1?'s':''} loaded` : 'Ready';
+</script>
+</body>
+</html>
