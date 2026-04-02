@@ -142,7 +142,7 @@ table.ex td.ex-name { color: #333; }
     <div class="results-topbar">
       <strong>Results <span id="clientCountLabel" style="color:#888;font-weight:normal;font-size:0.8rem"></span></strong>
       <div class="btns">
-        <button class="btn-copy" onclick="copyAllData()">📋 Copy All Data for Word Doc</button>
+        <button class="btn-copy" onclick="copyAllData()">📄 Download Word Doc</button>
         <button class="btn-clear" onclick="clearAllClients()">🗑 Clear All</button>
       </div>
     </div>
@@ -452,20 +452,162 @@ function clearAllClients() {
   renderResults();
 }
 
-// ── Copy data ──────────────────────────────────────────────────────────────────
+// ── Word Doc Generation ────────────────────────────────────────────────────────
 function copyAllData() {
   if (!clients.length) { alert('No clients yet — analyze some sheets first.'); return; }
-  const text = JSON.stringify(clients, null, 2);
-  navigator.clipboard.writeText(text).then(() => {
-    alert(`✅ ${clients.length} client${clients.length!==1?'s':''} copied!\n\nNow paste into Claude chat and say "generate the Word doc".`);
-  }).catch(() => {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:40%;z-index:9999;font-size:10px;padding:10px';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
-    document.body.removeChild(ta);
-    alert(`✅ ${clients.length} client${clients.length!==1?'s':''} copied! Paste into Claude chat.`);
-  });
+  generateWordDoc();
+}
+
+async function generateWordDoc() {
+  const btn = document.querySelector('.btn-copy');
+  const orig = btn.textContent;
+  btn.textContent = '⏳ Building doc...';
+  btn.disabled = true;
+
+  try {
+    // Load docx library
+    if (!window.docx) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+            Header, AlignmentType, BorderStyle, WidthType, ShadingType } = window.docx;
+
+    const sorted = [...clients].sort((a,b) => a.clientName.localeCompare(b.clientName));
+
+    function bd(color) { return { style: BorderStyle.SINGLE, size: 4, color: color||'CCCCCC' }; }
+    function bds(c) { const b=bd(c); return {top:b,bottom:b,left:b,right:b}; }
+
+    function makeCell(text, w, opts={}) {
+      return new TableCell({
+        borders: bds(opts.bc||'CCCCCC'),
+        width: { size: w, type: WidthType.DXA },
+        shading: { fill: opts.fill||'FFFFFF', type: ShadingType.CLEAR },
+        margins: { top:60, bottom:60, left:100, right:100 },
+        children: [new Paragraph({
+          children: [new TextRun({
+            text: String(text==null?'-':text),
+            font:'Arial', size:opts.size||18,
+            bold:!!opts.bold, color:opts.color||'111111'
+          })]
+        })]
+      });
+    }
+
+    const allChildren = [];
+
+    sorted.forEach((client, ci) => {
+      // Find peak exercise
+      let topCode=null, topW=-1;
+      client.exercises.forEach(ex => { if((ex.bestWeight||0)>topW){topW=ex.bestWeight;topCode=ex.code;} });
+
+      allChildren.push(new Paragraph({
+        children:[new TextRun({text:client.clientName,bold:true,size:40,font:'Arial',color:'111111'})],
+        spacing:{after:60}
+      }));
+      allChildren.push(new Paragraph({
+        children:[new TextRun({text:client.date?'Session dates: '+client.date:'Date not recorded',size:16,font:'Arial',color:'888888'})],
+        spacing:{after:60}
+      }));
+      allChildren.push(new Paragraph({
+        children:[new TextRun({text:'Generated: '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}),size:16,font:'Arial',color:'888888'})],
+        spacing:{after:200}
+      }));
+      allChildren.push(new Paragraph({
+        border:{bottom:{style:BorderStyle.SINGLE,size:8,color:'5a8a00',space:1}},
+        spacing:{after:200}
+      }));
+
+      const C = {code:800,name:3200,wt:1600,rpe:1100,note:2660};
+      const total = Object.values(C).reduce((a,b)=>a+b,0);
+
+      const hdr = new TableRow({ tableHeader:true, children:[
+        makeCell('Code',    C.code, {fill:'222222',color:'EEEEEE',bold:true,size:16}),
+        makeCell('Exercise',C.name, {fill:'222222',color:'EEEEEE',bold:true,size:16}),
+        makeCell('Peak Weight',C.wt,{fill:'222222',color:'EEEEEE',bold:true,size:16}),
+        makeCell('Peak RPE', C.rpe, {fill:'222222',color:'EEEEEE',bold:true,size:16}),
+        makeCell('Notes',   C.note, {fill:'222222',color:'EEEEEE',bold:true,size:16}),
+      ]});
+
+      const dataRows = client.exercises.map(ex => {
+        const isPeak = ex.code===topCode && ex.bestWeight!=null;
+        const rf = isPeak?'EEF7D5':'FFFFFF';
+        const wf = isPeak?'C8F542':'FFFFFF';
+        const wtText = ex.bestWeight!=null ? ex.bestWeight+' '+(ex.unit||'lbs') : (ex.unit||'-');
+        const rpeText = ex.peakRPE!=null ? ex.peakRPE+'/10' : '-';
+        return new TableRow({ children:[
+          makeCell(ex.code+(isPeak?' *':''), C.code, {fill:rf,bold:true,color:isPeak?'2D5200':'444444',size:16}),
+          makeCell(ex.name,  C.name, {fill:rf,bold:isPeak,size:16}),
+          makeCell(wtText,   C.wt,   {fill:wf,bold:isPeak,color:isPeak?'1A4000':'111111',size:isPeak?20:18}),
+          makeCell(rpeText,  C.rpe,  {fill:rf,color:'555555',size:16}),
+          makeCell(ex.notes||'-', C.note, {fill:rf,color:'666666',size:15}),
+        ]});
+      });
+
+      allChildren.push(new Table({
+        width:{size:total,type:WidthType.DXA},
+        columnWidths:Object.values(C),
+        rows:[hdr,...dataRows]
+      }));
+
+      allChildren.push(new Paragraph({
+        children:[new TextRun({text:'* Green = highest weight this session',size:14,font:'Arial',color:'888888',italics:true})],
+        spacing:{before:80,after:60}
+      }));
+
+      if (client.generalNotes) {
+        allChildren.push(new Paragraph({
+          children:[new TextRun({text:'Notes: '+client.generalNotes,size:16,font:'Arial',color:'555555'})],
+          spacing:{after:60}
+        }));
+      }
+
+      if (ci < sorted.length-1) {
+        allChildren.push(new Paragraph({children:[],pageBreakBefore:true}));
+      }
+    });
+
+    const headerP = new Paragraph({
+      children:[new TextRun({
+        text:'Workout Progress Report | '+new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'})+' | '+sorted.length+' Clients',
+        size:15,font:'Arial',color:'888888'
+      })],
+      border:{bottom:{style:BorderStyle.SINGLE,size:4,color:'DDDDDD',space:1}}
+    });
+
+    const doc = new Document({
+      sections:[{
+        properties:{page:{size:{width:12240,height:15840},margin:{top:900,right:900,bottom:900,left:900}}},
+        headers:{default:new Header({children:[headerP]})},
+        children:allChildren
+      }]
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    const blob = new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), {
+      href: url,
+      download: 'workout_progress_'+new Date().toISOString().slice(0,10)+'.docx'
+    });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    btn.textContent = '✅ Downloaded!';
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 3000);
+
+  } catch(err) {
+    console.error(err);
+    btn.textContent = '⚠️ Error: '+err.message.slice(0,40);
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 4000);
+  }
 }
 
 // ── Status message ─────────────────────────────────────────────────────────────
