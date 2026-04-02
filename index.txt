@@ -1,16 +1,1 @@
-💪 Workout Progress Tracker
-Ready
-SETUP
-Anthropic API Key
-Get one at console.anthropic.com → API Keys
-LOAD PDF
 
-📄
-Click or drop a scanned PDF
-Client Name (or leave blank to auto-detect)
-🔍 Analyze Selected Pages as One Client
-Results
-📄 Download Word Doc
-🗑 Clear All
-📊
-Analyze sheets on the left — clients will appear here, sorted A–Z.
